@@ -11,10 +11,19 @@
     device hybrid-joins the destination tenant on the next Automatic-Device-Join
     run.
 
-    Guard: the script reads 'dsregcmd /status', extracts the current TenantId,
-    and proceeds ONLY when it matches -SourceTenantId. For any other state
-    (already on the target tenant, unjoined, or a different tenant) it logs and
-    exits without changes. This makes it safe to run across a mixed fleet.
+    Decision logic (classify-then-act on the DEVICE-section TenantId):
+      On SOURCE tenant -> dsregcmd /leave + WAM/cert cleanup + write target CDJ keys
+      Unjoined (none)  -> no leave; write target CDJ keys so it can join target
+      On TARGET tenant -> nothing to do
+      Other tenant     -> fully hands-off (do not redirect an unexpected device)
+
+    Only the destructive leave is gated on "currently on source". Writing the
+    target CDJ keys is benign and idempotent, so it also runs for an already-
+    unjoined device - otherwise such a device would be stranded with nothing
+    pointing it at the destination tenant.
+
+    The script is safe to run across a mixed fleet: target and unexpected-tenant
+    devices are left unchanged.
 
     The source tenant SCP has already been removed in this environment, so the
     Automatic-Device-Join scheduled task can no longer pull the device back to
@@ -81,7 +90,7 @@
 param(
     [string] $SourceTenantId     = "1676489c-5c72-46b7-ba63-9ab90c4aad44",
     [string] $TargetTenantId     = "f2ee1ec7-fe58-4178-b8a8-52cc9c5cb34a",
-    [string] $TargetTenantName   = "ptcl4.onmicrosoft.com",
+    [string] $TargetTenantName   = "",
     [bool]   $WriteTargetCdjKeys = $true,
     [bool]   $RemoveCerts        = $true,
     [string] $LogDir             = ""
@@ -384,41 +393,64 @@ try {
     }
     Write-Log "Device tenant for guard evaluation: '$currentTenantId'"
 
-    # ---- 2. GUARD: only proceed if joined to the SOURCE tenant ------------
-    if ($currentTenantId -ne $SourceTenantId) {
-        Write-Log ""
-        Write-Log "GUARD: device TenantId '$currentTenantId' does not match source"
-        Write-Log "       '$SourceTenantId'. No unjoin performed."
-        if ($currentTenantId -eq $TargetTenantId) {
-            Write-Log "       Device already appears to be on the TARGET tenant - nothing to do."
-        }
-        elseif ($currentTenantId -eq "") {
-            Write-Log "       Device is not Azure AD joined to any tenant - nothing to do."
-        }
-        else {
-            Write-Log "       Device is on an unexpected tenant - leaving it untouched for safety."
-        }
-        Write-Host "`nNo changes made (guard did not match source tenant). Log: $($Script:LogFilePath)" -ForegroundColor Yellow
-        return
-    }
+    # ---- 2. Classify the device into one of four cases --------------------
+    #   Source     -> leave + clean + write target CDJ keys
+    #   Unjoined   -> no leave; write target CDJ keys so it can join target
+    #   Target     -> nothing to do
+    #   Unexpected -> fully hands-off (do not redirect a device we did not expect)
+    $case = "Unexpected"
+    if     ($currentTenantId -eq $SourceTenantId) { $case = "Source" }
+    elseif ($currentTenantId -eq "")              { $case = "Unjoined" }
+    elseif ($currentTenantId -eq $TargetTenantId) { $case = "Target" }
 
     Write-Log ""
-    Write-Log "GUARD MATCHED: device is joined to the SOURCE tenant. Proceeding with unjoin."
+    Write-Log "Device classification: $case"
 
-    # ---- 3. Leave the source tenant ---------------------------------------
-    Invoke-DsRegLeave
+    $doLeave = $false
+    $doCdj   = $false
 
-    # ---- 4. Flush WAM accounts --------------------------------------------
-    Clear-WamAccounts
-
-    # ---- 5. Remove leftover org certs -------------------------------------
-    if ($RemoveCerts) {
-        Remove-OrgAccessCerts
+    switch ($case) {
+        "Source" {
+            Write-Log "Device is on the SOURCE tenant - will unjoin, clean, and write target CDJ keys."
+            $doLeave = $true
+            $doCdj   = $true
+        }
+        "Unjoined" {
+            Write-Log "Device is not joined to any tenant - skipping unjoin; will write target CDJ keys so it can join the destination."
+            $doLeave = $false
+            $doCdj   = $true
+        }
+        "Target" {
+            Write-Log "Device is already on the TARGET tenant - nothing to do."
+            Write-Host "`nNo changes made (already on target tenant). Log: $($Script:LogFilePath)" -ForegroundColor Yellow
+            return
+        }
+        "Unexpected" {
+            Write-Log "Device is on an UNEXPECTED tenant ('$currentTenantId') - leaving it completely untouched for safety. Investigate manually."
+            Write-Host "`nNo changes made (unexpected tenant - hands-off). Log: $($Script:LogFilePath)" -ForegroundColor Yellow
+            return
+        }
     }
 
-    # ---- 6. Write target CDJ keys -----------------------------------------
-    if ($WriteTargetCdjKeys) {
+    # ---- 3. Leave the source tenant (Source case only) --------------------
+    if ($doLeave) {
+        Invoke-DsRegLeave
+
+        # ---- 4. Flush WAM accounts ----------------------------------------
+        Clear-WamAccounts
+
+        # ---- 5. Remove leftover org certs ---------------------------------
+        if ($RemoveCerts) {
+            Remove-OrgAccessCerts
+        }
+    }
+
+    # ---- 6. Write target CDJ keys (Source or Unjoined cases) --------------
+    if ($doCdj -and $WriteTargetCdjKeys) {
         Write-TargetCdjKeys
+    }
+    elseif ($doCdj -and -not $WriteTargetCdjKeys) {
+        Write-Log "WriteTargetCdjKeys is disabled - skipping CDJ key write."
     }
 
     # ---- 7. Re-check state -------------------------------------------------
@@ -430,12 +462,20 @@ try {
     $afterTenantId = if ($after.ContainsKey("DeviceState_TenantId")) { $after["DeviceState_TenantId"] }
                      elseif ($after.ContainsKey("TenantId")) { $after["TenantId"] } else { "" }
     Write-LogHeader "Result"
-    if ($nowJoined -and $afterTenantId -eq $SourceTenantId) {
-        Write-Log "Still reports source tenant. A reboot is likely required for /leave to"
-        Write-Log "fully apply; re-check dsregcmd /status after reboot."
+    if ($doLeave) {
+        if ($nowJoined -and $afterTenantId -eq $SourceTenantId) {
+            Write-Log "Still reports source tenant. A reboot is likely required for /leave to"
+            Write-Log "fully apply; re-check dsregcmd /status after reboot."
+        }
+        else {
+            Write-Log "Device left the source tenant successfully."
+        }
     }
     else {
-        Write-Log "Device left the source tenant successfully."
+        Write-Log "Device was already unjoined; no leave performed."
+        if ($doCdj -and $WriteTargetCdjKeys) {
+            Write-Log "Target CDJ keys written so the device can hybrid-join the destination."
+        }
     }
 
     Write-Log ""
@@ -446,7 +486,8 @@ try {
     Write-Log "     (driven by the CDJ keys) once the device object is synced there."
     Write-Log "  4. Open Office and activate with the new (target) account."
 
-    Write-Host "`nHybrid unjoin finished (source -> target). Log: $($Script:LogFilePath)" -ForegroundColor Green
+    $summary = if ($doLeave) { "source -> target" } else { "unjoined -> target CDJ written" }
+    Write-Host "`nHybrid unjoin finished ($summary). Log: $($Script:LogFilePath)" -ForegroundColor Green
 }
 finally {
     if ($Script:LogStream) {
