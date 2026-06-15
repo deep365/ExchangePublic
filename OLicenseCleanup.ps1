@@ -64,14 +64,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Continue"
 
-#region ── Constants ────────────────────────────────────────────────────────────
+#region -- Constants ------------------------------------------------------------
 $SCRIPT_VERSION = "1.28"
 $OFFICE_APP_ID  = "0ff1ce15-a989-479d-af46-f275c6370663"
 $PS_WAM_SIGNOUT = "SignOutOfWAMAccounts.ps1"
 $REG_LOG_PATH   = "HKCU:\Software\Microsoft\Office\16.0\Common\ScriptRun\OLicenseCleanup"
 #endregion
 
-#region ── Script-scope state ───────────────────────────────────────────────────
+#region -- Script-scope state ---------------------------------------------------
 $Script:LogStream      = $null
 $Script:LogFilePath    = $null
 $Script:Is64BitOS      = $false
@@ -83,7 +83,7 @@ $Script:TimeStamp      = ""
 #endregion
 
 ###############################################################################
-#region ── Logging helpers ──────────────────────────────────────────────────────
+#region -- Logging helpers ------------------------------------------------------
 ###############################################################################
 
 function Write-LogRaw {
@@ -91,7 +91,7 @@ function Write-LogRaw {
     if ($Script:LogStream) { $Script:LogStream.WriteLine($Line) }
 }
 
-# LogH  — major section header (==== underline)
+# LogH  - major section header (==== underline)
 function Write-LogHeader {
     param([string]$Message)
     $underline = "=" * $Message.Length
@@ -102,7 +102,7 @@ function Write-LogHeader {
     Write-Verbose $underline
 }
 
-# LogH1 — sub-section header (---- underline)
+# LogH1 - sub-section header (---- underline)
 function Write-LogSubHeader {
     param([string]$Message)
     $underline = "-" * $Message.Length
@@ -113,7 +113,7 @@ function Write-LogSubHeader {
     Write-Verbose $underline
 }
 
-# LogH2 — plain header, no underline
+# LogH2 - plain header, no underline
 function Write-LogH2 {
     param([string]$Message)
     Write-LogRaw ""
@@ -121,7 +121,7 @@ function Write-LogH2 {
     Write-Verbose $Message
 }
 
-# Log   — timestamped entry, echoed to console
+# Log   - timestamped entry, echoed to console
 function Write-Log {
     param([string]$Message = "")
     if ($Message -eq "") {
@@ -134,7 +134,7 @@ function Write-Log {
     }
 }
 
-# LogOnly — timestamped entry written only to the log file
+# LogOnly - timestamped entry written only to the log file
 function Write-LogOnly {
     param([string]$Message = "")
     if ($Message -eq "") {
@@ -147,7 +147,7 @@ function Write-LogOnly {
 #endregion
 
 ###############################################################################
-#region ── Registry helpers ─────────────────────────────────────────────────────
+#region -- Registry helpers -----------------------------------------------------
 ###############################################################################
 
 function Get-RegDWord {
@@ -195,13 +195,13 @@ function ConvertTo-PSRegPath {
 #endregion
 
 ###############################################################################
-#region ── Initialize ───────────────────────────────────────────────────────────
+#region -- Initialize -----------------------------------------------------------
 ###############################################################################
 
 function Initialize {
     Write-Verbose "=== Initialize: starting ==="
 
-    # ── OS bitness ──────────────────────────────────────────────────────────
+    # -- OS bitness ----------------------------------------------------------
     $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
     if ($cs) {
         $Script:Is64BitOS = $cs.SystemType -match "^x64"
@@ -209,11 +209,11 @@ function Initialize {
     }
     Write-Verbose "64-bit OS detected: $($Script:Is64BitOS)"
 
-    # ── Office bitness ──────────────────────────────────────────────────────
+    # -- Office bitness ------------------------------------------------------
     $Script:Is64BitOffice = Detect-OfficeBitness
     Write-Verbose "64-bit Office detected: $($Script:Is64BitOffice)"
 
-    # ── OS info ─────────────────────────────────────────────────────────────
+    # -- OS info -------------------------------------------------------------
     $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
     if ($os) {
         $Script:OSInfo = "$($os.Caption)$($os.OtherTypeDescription), SP $($os.ServicePackMajorVersion), " +
@@ -222,7 +222,7 @@ function Initialize {
     }
     Write-Verbose "OS Info: $($Script:OSInfo)"
 
-    # ── Log directory / file ────────────────────────────────────────────────
+    # -- Log directory / file ------------------------------------------------
     if ($LogDir -eq "") { $LogDir = $env:TEMP }
     $ts           = Get-Date -Format "yyyyMMddHHmmss"
     $Script:TimeStamp = $ts
@@ -250,7 +250,7 @@ function Initialize {
     Write-LogOnly "Remove O16 Lic: $ClearO16"
     Write-LogOnly "Verbose mode:   $($PSCmdlet.MyInvocation.BoundParameters.ContainsKey('Verbose'))"
 
-    # ── Profiles directory ──────────────────────────────────────────────────
+    # -- Profiles directory --------------------------------------------------
     try {
         $Script:ProfilesDir = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList" `
                                     -Name ProfilesDirectory -ErrorAction Stop).ProfilesDirectory
@@ -263,7 +263,7 @@ function Initialize {
     Write-LogOnly "Users profile location: $($Script:ProfilesDir)"
     Write-LogOnly "Current Directory: $($Script:ScriptDir)"
 
-    # ── Run-attempt counter in registry ────────────────────────────────────
+    # -- Run-attempt counter in registry ------------------------------------
     $attempts = Get-RegDWord -Path $REG_LOG_PATH -Name "ScriptRunAttempts"
     if ($null -ne $attempts) { $attempts = [int]$attempts + 1 } else { $attempts = 1 }
 
@@ -282,7 +282,7 @@ function Initialize {
 #endregion
 
 ###############################################################################
-#region ── Detect OS / Office bitness ──────────────────────────────────────────
+#region -- Detect OS / Office bitness ------------------------------------------
 ###############################################################################
 
 function Detect-OfficeBitness {
@@ -351,7 +351,7 @@ function Get-WindowsVersionNT {
 #endregion
 
 ###############################################################################
-#region ── CleanOSPP ────────────────────────────────────────────────────────────
+#region -- CleanOSPP ------------------------------------------------------------
 ###############################################################################
 
 function Invoke-CleanOSPP {
@@ -405,7 +405,7 @@ function Invoke-CleanOSPP {
 #endregion
 
 ###############################################################################
-#region ── ResetUserKey ─────────────────────────────────────────────────────────
+#region -- ResetUserKey ---------------------------------------------------------
 ###############################################################################
 
 function Reset-UserKey {
@@ -421,7 +421,7 @@ function Reset-UserKeyEx {
 
     if ($CustomName -eq "") { $CustomName = "CustomUserReset" }
 
-    # ── Direct delete of HKCU key ───────────────────────────────────────────
+    # -- Direct delete of HKCU key -------------------------------------------
     $hkcuKey = "HKCU:\Software\Microsoft\Office\$Version.0\$RegKey"
     Write-Log "Remove key: $hkcuKey"
     try {
@@ -439,7 +439,7 @@ function Reset-UserKeyEx {
         Set-RegDWord -Path $REG_LOG_PATH -Name $cacheLog -Value $retVal
     }
 
-    # ── Create UserSettings key so Office resets it on next launch ──────────
+    # -- Create UserSettings key so Office resets it on next launch ----------
     if ($Script:Is64BitOS -and $Script:Is64BitOffice) {
         $settingsKey = "HKLM:\SOFTWARE\Microsoft\Office\$Version.0\User Settings"
     }
@@ -476,7 +476,7 @@ function Reset-UserKeyEx {
 #endregion
 
 ###############################################################################
-#region ── ClearCredmanCache ────────────────────────────────────────────────────
+#region -- ClearCredmanCache ----------------------------------------------------
 ###############################################################################
 
 function Clear-CredmanCache {
@@ -550,7 +550,7 @@ function Remove-CredmanEntry {
 #endregion
 
 ###############################################################################
-#region ── ClearSCALicCache ─────────────────────────────────────────────────────
+#region -- ClearSCALicCache -----------------------------------------------------
 ###############################################################################
 
 function Clear-SCALicCache {
@@ -581,7 +581,7 @@ function Clear-SCALicCache {
 #endregion
 
 ###############################################################################
-#region ── ClearVNextLicCache ───────────────────────────────────────────────────
+#region -- ClearVNextLicCache ---------------------------------------------------
 ###############################################################################
 
 function Clear-VNextLicCache {
@@ -593,14 +593,14 @@ function Clear-VNextLicCache {
     Remove-CachedFolder -FolderPath "$localAppData\Microsoft\Office\Licenses" `
                         -CacheName "LocalAppDataLicensesFolderDelete"
 
-    # Device Based Licensing cache (note: VBS used %localappdata% here — preserved)
+    # Device Based Licensing cache (note: VBS used %localappdata% here - preserved)
     Remove-CachedFolder -FolderPath "$localAppData\Microsoft\Licenses" `
                         -CacheName "ProgramDataLicensesFolderDelete"
 }
 #endregion
 
 ###############################################################################
-#region ── ClearIdentityCache ───────────────────────────────────────────────────
+#region -- ClearIdentityCache ---------------------------------------------------
 ###############################################################################
 
 function Clear-IdentityCache {
@@ -612,7 +612,7 @@ function Clear-IdentityCache {
 #endregion
 
 ###############################################################################
-#region ── ClearOneAuthCache ────────────────────────────────────────────────────
+#region -- ClearOneAuthCache ----------------------------------------------------
 ###############################################################################
 
 function Clear-OneAuthCache {
@@ -624,14 +624,14 @@ function Clear-OneAuthCache {
 #endregion
 
 ###############################################################################
-#region ── ClearConfigUser ──────────────────────────────────────────────────────
+#region -- ClearConfigUser ------------------------------------------------------
 ###############################################################################
 
 function Clear-ConfigUser {
     Write-LogSubHeader "Clearing HKLM cached user identity values (EmailAddress / TenantId / ProductKeys)"
 
     if (-not $ClearO16) {
-        Write-Verbose "ClearO16 is false — skipping ClearConfigUser"
+        Write-Verbose "ClearO16 is false - skipping ClearConfigUser"
         return
     }
 
@@ -641,7 +641,7 @@ function Clear-ConfigUser {
         $props = Get-ItemProperty -Path $configKey -ErrorAction Stop
     }
     catch {
-        Write-Log "ClickToRun Configuration key not found — skipping"
+        Write-Log "ClickToRun Configuration key not found - skipping"
         return
     }
 
@@ -668,7 +668,7 @@ function Clear-ConfigUser {
 #endregion
 
 ###############################################################################
-#region ── ClearFolder / Remove-CachedFolder ────────────────────────────────────
+#region -- ClearFolder / Remove-CachedFolder ------------------------------------
 ###############################################################################
 
 function Remove-CachedFolder {
@@ -700,7 +700,7 @@ function Remove-CachedFolder {
         Write-Log "  -> Removed via Remove-Item"
     }
     catch {
-        Write-Log "  -> Remove-Item failed: $_ — retrying with rd.exe"
+        Write-Log "  -> Remove-Item failed: $_ - retrying with rd.exe"
     }
 
     # Fallback: rd /s /q
@@ -717,7 +717,7 @@ function Remove-CachedFolder {
 #endregion
 
 ###############################################################################
-#region ── InvokeSignOutOfWAM ───────────────────────────────────────────────────
+#region -- InvokeSignOutOfWAM ---------------------------------------------------
 ###############################################################################
 
 function Invoke-SignOutOfWAM {
@@ -725,7 +725,7 @@ function Invoke-SignOutOfWAM {
 
     $wamScript = Join-Path $Script:ScriptDir $PS_WAM_SIGNOUT
     if (-not (Test-Path $wamScript)) {
-        Write-Log "$PS_WAM_SIGNOUT not found in script directory — skipping WAM sign-out"
+        Write-Log "$PS_WAM_SIGNOUT not found in script directory - skipping WAM sign-out"
         Set-RegDWord -Path $REG_LOG_PATH -Name "LastRunLaunchSignOutOfWAM" -Value 2
         return
     }
@@ -748,7 +748,7 @@ function Invoke-SignOutOfWAM {
 #endregion
 
 ###############################################################################
-#region ── MAIN ─────────────────────────────────────────────────────────────────
+#region -- MAIN -----------------------------------------------------------------
 ###############################################################################
 
 try {
