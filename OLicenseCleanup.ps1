@@ -500,12 +500,15 @@ function Clear-CredmanCache {
         $building   = $false
         $targetLine = ""
 
+        $strippedPattern = ($pattern -replace '\*', '')
+        $patternStripped = [regex]::Escape($strippedPattern)
+
         foreach ($line in $lines) {
             $trimmed = $line.Trim()
 
             # Start collecting when we see the key name or OneDrive
             if (($trimmed -match [regex]::Escape($key)) -or ($trimmed -match "OneDrive")) {
-                if ($trimmed -notmatch [regex]::Escape($pattern -replace '\*', '')) {
+                if ($trimmed -notmatch $patternStripped) {
                     $building   = $true
                     $targetLine = $trimmed
                     continue
